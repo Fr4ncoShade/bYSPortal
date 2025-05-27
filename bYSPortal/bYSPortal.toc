@@ -1,0 +1,6 @@
+## Interface: 30300
+## Title: bYSPortal
+## Version: 1.0.0
+## Author: Bianconeri
+## Notes: Yogg Saron Portal
+bYSPortal.lua
