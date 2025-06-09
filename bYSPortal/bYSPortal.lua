@@ -1,5 +1,13 @@
-local ZONE_NAME = "Ульдуар"
-local SUBZONE_NAME = "Темница Йогг-Сарона"
+local locale = GetLocale()
+local ZONE_NAME, SUBZONE_NAME
+
+if locale == "ruRU" then
+    ZONE_NAME = "Ульдуар"
+    SUBZONE_NAME = "Темница Йогг-Сарона"
+elseif locale == "enUS" then
+    ZONE_NAME = "Ulduar"
+    SUBZONE_NAME = "Prison of Yogg-Saron"
+end
 
 local MAP_SCALE = 980
 
@@ -16,21 +24,14 @@ local MIN_FONT_SIZE = 10
 local MAX_FONT_SIZE = 20
 local MINIMAP_MAX_ZOOM = 5
 
-local points = {
---[[
-    { x = 0.682, y = 0.428 },
-    { x = 0.662, y = 0.419 },
-    { x = 0.656, y = 0.398 },
-    { x = 0.658, y = 0.375 },
-    { x = 0.667, y = 0.361 },
-    { x = 0.681, y = 0.358 },
-    { x = 0.696, y = 0.361 },
-    { x = 0.705, y = 0.382 },
-    { x = 0.708, y = 0.400 },
-    { x = 0.700, y = 0.419 },
-	]]
-	---------------------------
-		
+local portals10 = {
+	{ x = 0.7029, y = 0.3768 }, -- 1
+	{ x = 0.7029, y = 0.4184 }, -- 2
+    { x = 0.6610, y = 0.4184 }, -- 3
+    { x = 0.6610, y = 0.3768 }, -- 4
+}
+
+local portals25 = {
     { x = 0.6816, y = 0.3580 }, -- 1
     { x = 0.7029, y = 0.3660 }, -- 2
     { x = 0.7140, y = 0.3833 }, -- 3
@@ -41,18 +42,20 @@ local points = {
     { x = 0.6592, y = 0.4031 }, -- 8
     { x = 0.6552, y = 0.3833 }, -- 9
     { x = 0.6663, y = 0.3660 }, -- 10
-
-
-        
-	---------------------------
 }
 
 local icons = {}
 
-for i, point in ipairs(points) do
-    local icon = CreateFrame("Frame", "LocationTrackerIcon"..i, Minimap)
+local MaskFrame = CreateFrame("Frame", "MaskedIconFrame", Minimap)
+MaskFrame:SetAllPoints(Minimap)
+MaskFrame:SetFrameStrata("HIGH")
+MaskFrame:SetFrameLevel(5)
+
+for i = 1, 10 do
+    local icon = CreateFrame("Frame", "LocationTrackerIcon"..i, MaskFrame)
     icon:SetSize(16, 16)
     icon:SetFrameStrata("HIGH")
+    icon:SetFrameLevel(6)
 
     icon.text = icon:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     icon.text:SetPoint("CENTER", icon, "CENTER", 0, 0)
@@ -60,12 +63,6 @@ for i, point in ipairs(points) do
 
     icon:Hide()
     table.insert(icons, icon)
-end
-
-local function GetDistance(x1, y1, x2, y2)
-    local dx = x2 - x1
-    local dy = y2 - y1
-    return math.sqrt(dx * dx + dy * dy)
 end
 
 local function UpdateFontSizes(zoom)
@@ -96,6 +93,21 @@ frame:SetScript("OnUpdate", function(self, elapsed)
         return
     end
 
+    local difficulty = select(3, GetInstanceInfo())
+	--print("Difficulty:", difficulty)
+    local points
+
+    if difficulty == 1 then
+        points = portals10
+    elseif difficulty == 2 then
+        points = portals25
+    else
+        for _, icon in ipairs(icons) do
+            icon:Hide()
+        end
+        return
+    end
+
     if not WorldMapFrame:IsShown() then
         SetMapToCurrentZone()
     end
@@ -117,20 +129,46 @@ frame:SetScript("OnUpdate", function(self, elapsed)
     local minimapRadiusCoords = minimapRadiusYards / MAP_SCALE
     local radiusPixels = Minimap:GetWidth() / 2
 
-    for i, point in ipairs(points) do
-        local icon = icons[i]
-        local distance = GetDistance(px, py, point.x, point.y)
+    local isRotating = GetCVar("rotateMinimap") == "1"
+    local rotation = isRotating and GetPlayerFacing() or 0
 
-        if distance > minimapRadiusCoords then
-            icon:Hide()
-        else
+    local maxVisibleDist = 1.0
+    local fadeStart = 0.85
+
+    for i, icon in ipairs(icons) do
+        local point = points[i]
+        if point then
             local dx = (point.x - px) / minimapRadiusCoords
             local dy = (point.y - py) / minimapRadiusCoords
-            local xOffset = dx * radiusPixels
-            local yOffset = dy * radiusPixels
+            local distance = math.sqrt(dx*dx + dy*dy)
 
-            icon:SetPoint("CENTER", Minimap, "CENTER", xOffset, -yOffset)
-            icon:Show()
+            if distance > maxVisibleDist then
+                icon:Hide()
+            else
+                if isRotating then
+                    local cos = math.cos(rotation)
+                    local sin = math.sin(rotation)
+                    local x = dx * cos - dy * sin
+                    local y = dx * sin + dy * cos
+                    dx, dy = x, y
+                end
+
+                local xOffset = dx * radiusPixels
+                local yOffset = -dy * radiusPixels
+
+                icon:SetPoint("CENTER", MaskFrame, "CENTER", xOffset, yOffset)
+
+                local alpha = 1
+                if distance > fadeStart then
+                    alpha = 1 - (distance - fadeStart) / (maxVisibleDist - fadeStart)
+                    alpha = math.max(0, math.min(1, alpha))
+                end
+
+                icon:SetAlpha(alpha)
+                icon:Show()
+            end
+        else
+            icon:Hide()
         end
     end
 end)
